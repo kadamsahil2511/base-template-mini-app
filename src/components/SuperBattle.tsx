@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { OpinionCard } from "~/components/ui/OpinionCard";
 import { DuelResults } from "~/components/ui/DuelResults";
+import { CreateBattleModal } from "~/components/ui/CreateBattleModal";
 import { subscribeToBattle, subscribeToOpinions, type Battle as DBBattle, type Opinion as DBOpinion } from "~/lib/database";
 
 interface Battle {
@@ -96,6 +97,8 @@ export default function SuperBattle() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingBattle, setCreatingBattle] = useState(false);
 
   useEffect(() => {
     const authenticateUser = async () => {
@@ -232,6 +235,51 @@ export default function SuperBattle() {
     }
   };
 
+  const handleCreateBattle = async (battleData: {
+    question: string;
+    sideALabel: string;
+    sideAEmoji: string;
+    sideBLabel: string;
+    sideBEmoji: string;
+    duration: number;
+  }) => {
+    if (!isAuthenticated || !user) {
+      alert("You must be authenticated to create a battle");
+      return;
+    }
+
+    setCreatingBattle(true);
+    try {
+      const response = await fetch("/api/battles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.fid}`,
+        },
+        body: JSON.stringify({
+          ...battleData,
+          username: user.username || user.displayName || `user${user.fid}`,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setShowCreateModal(false);
+        alert("Battle created successfully! Reloading...");
+        // Reload the page to show the new battle
+        window.location.reload();
+      } else {
+        const error = await response.json();
+        alert(`Failed to create battle: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Error creating battle:", error);
+      alert("Failed to create battle");
+    } finally {
+      setCreatingBattle(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-background min-h-screen flex items-center justify-center">
@@ -260,18 +308,26 @@ export default function SuperBattle() {
             Pick a side. Cast your take. Vote with weight.
           </p>
           {isAuthenticated && user && (
-            <div className="flex items-center justify-center gap-2 mt-2">
-              <img 
-                src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${user.fid}`)}`}
-                alt={`@${user.username || user.displayName}`}
-                className="w-6 h-6 rounded-full border border-border object-cover"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-              <p className="text-xs text-center text-muted-foreground">
-                Connected as @{user.username || user.displayName || `FID: ${user.fid}`}
-              </p>
+            <div className="flex flex-col items-center gap-2 mt-2">
+              <div className="flex items-center gap-2">
+                <img 
+                  src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${user.fid}`)}`}
+                  alt={`@${user.username || user.displayName}`}
+                  className="w-6 h-6 rounded-full border border-border object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+                <p className="text-xs text-center text-muted-foreground">
+                  Connected as @{user.username || user.displayName || `FID: ${user.fid}`}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="text-xs text-primary hover:underline font-medium"
+              >
+                + Create New Battle
+              </button>
             </div>
           )}
         </div>
@@ -416,10 +472,18 @@ export default function SuperBattle() {
               snippet: op.opinion.slice(0, 50) + (op.opinion.length > 50 ? "..." : ""),
             }))}
             onMintNFT={() => console.log("Mint NFT")}
-            onStartNewDuel={() => console.log("Start new duel")}
+            onStartNewDuel={() => setShowCreateModal(true)}
             onViewPastDebates={() => console.log("View past debates")}
           />
         )}
+
+        {/* Create Battle Modal */}
+        <CreateBattleModal
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreateBattle}
+          isSubmitting={creatingBattle}
+        />
 
         {/* Toggle Results Button (for demo) */}
         <div className="mt-8 text-center">
