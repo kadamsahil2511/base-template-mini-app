@@ -1,54 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "~/lib/auth";
+import { submitOpinion, getOpinions } from "~/lib/database";
 
 export const dynamic = "force-dynamic";
-
-// Mock opinions storage - in production, use a database
-const opinions: Array<{
-  id: string;
-  battleId: string;
-  fid: number;
-  username: string;
-  opinion: string;
-  side: "A" | "B";
-  weight: number;
-  tags: string[];
-  createdAt: string;
-}> = [
-  {
-    id: "1",
-    battleId: "1",
-    fid: 12345,
-    username: "user123",
-    opinion: "NFTs are evolving beyond just art. Utility tokens, gaming assets, and digital identity will make them crucial for web3 in 2025.",
-    side: "A",
-    weight: 3.2,
-    tags: ["Smart", "Relatable"],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    battleId: "1",
-    fid: 12346,
-    username: "crypto_skeptic",
-    opinion: "The hype has died down. Unless there's a killer app, most NFTs will be worthless. Focus on real-world assets instead.",
-    side: "B",
-    weight: 1.8,
-    tags: ["Risky", "YOLO"],
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    battleId: "1",
-    fid: 12347,
-    username: "digital_artist",
-    opinion: "For artists, NFTs provide direct ownership and royalty streams. That value proposition isn't going anywhere.",
-    side: "A",
-    weight: 0.9,
-    tags: ["Smart"],
-    createdAt: new Date().toISOString(),
-  },
-];
 
 export async function GET(req: NextRequest) {
   try {
@@ -63,11 +17,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Filter and sort opinions by weight
-    const battleOpinions = opinions
-      .filter(op => op.battleId === battleId)
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, limit);
+    // Fetch opinions from Firebase
+    const allOpinions = await getOpinions(battleId);
+    const battleOpinions = allOpinions.slice(0, limit);
 
     return NextResponse.json({
       success: true,
@@ -93,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { battleId, opinion, side } = body;
+    const { battleId, opinion, side, username } = body;
 
     // Validate input
     if (!battleId || !opinion || !side || !["A", "B"].includes(side)) {
@@ -113,23 +65,18 @@ export async function POST(req: NextRequest) {
     // In production, calculate weight based on user's holdings/reputation
     const weight = Math.random() * 5; // Mock weight
 
-    const newOpinion = {
-      id: Date.now().toString(),
+    const opinionId = await submitOpinion({
       battleId,
       fid,
-      username: `user${fid}`,
+      username: username || `user${fid}`,
       opinion,
       side,
       weight,
-      tags: [], // In production, use AI to generate tags
-      createdAt: new Date().toISOString(),
-    };
-
-    opinions.push(newOpinion);
+    });
 
     return NextResponse.json({
       success: true,
-      opinion: newOpinion,
+      opinionId,
     });
   } catch (error) {
     console.error("Error submitting opinion:", error);

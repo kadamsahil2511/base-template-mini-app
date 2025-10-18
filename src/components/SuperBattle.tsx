@@ -4,37 +4,94 @@ import { useState, useEffect } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { OpinionCard } from "~/components/ui/OpinionCard";
 import { DuelResults } from "~/components/ui/DuelResults";
+import { subscribeToBattle, subscribeToOpinions, type Battle as DBBattle, type Opinion as DBOpinion } from "~/lib/database";
 
 interface Battle {
+  id: string;
   creator: string;
   question: string;
   votingEndsIn: string;
+  votingEndsAt: string;
   sideA: {
     emoji: string;
     label: string;
     percentage: number;
+    votes: number;
   };
   sideB: {
     emoji: string;
     label: string;
     percentage: number;
+    votes: number;
   };
 }
 
 interface Opinion {
+  id: string;
   username: string;
   opinion: string;
-  tags: string[];
+  tags?: string[];
   weight: string;
   avatarColor?: string;
+}
+
+function calculateTimeRemaining(votingEndsAt: string): string {
+  const now = new Date().getTime();
+  const end = new Date(votingEndsAt).getTime();
+  const diff = end - now;
+  
+  if (diff <= 0) return "Ended";
+  
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  return `${hours}h ${minutes}m`;
+}
+
+function formatBattle(dbBattle: DBBattle): Battle {
+  const totalVotes = dbBattle.sideA.votes + dbBattle.sideB.votes;
+  const sideAPercentage = totalVotes > 0 ? Math.round((dbBattle.sideA.votes / totalVotes) * 100) : 50;
+  const sideBPercentage = totalVotes > 0 ? 100 - sideAPercentage : 50;
+  
+  return {
+    id: dbBattle.id,
+    creator: dbBattle.creator,
+    question: dbBattle.question,
+    votingEndsIn: calculateTimeRemaining(dbBattle.votingEndsAt),
+    votingEndsAt: dbBattle.votingEndsAt,
+    sideA: {
+      ...dbBattle.sideA,
+      percentage: sideAPercentage,
+    },
+    sideB: {
+      ...dbBattle.sideB,
+      percentage: sideBPercentage,
+    },
+  };
+}
+
+function formatOpinion(dbOpinion: DBOpinion): Opinion {
+  return {
+    id: dbOpinion.id,
+    username: dbOpinion.username,
+    opinion: dbOpinion.opinion,
+    tags: [],
+    weight: `${dbOpinion.weight.toFixed(1)} ETH weight`,
+    avatarColor: "#dddddd",
+  };
 }
 
 export default function SuperBattle() {
   const [opinion, setOpinion] = useState("");
   const [selectedSide, setSelectedSide] = useState<"A" | "B" | null>(null);
   const [showResults, setShowResults] = useState(false);
-  const [user, setUser] = useState<{ fid: number; username?: string } | null>(null);
+  const [user, setUser] = useState<{ fid: number; username?: string; displayName?: string } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [battle, setBattle] = useState<Battle | null>(null);
+  const [opinions, setOpinions] = useState<Opinion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [hasVoted, setHasVoted] = useState(false);
 
   useEffect(() => {
     const authenticateUser = async () => {
@@ -53,58 +110,139 @@ export default function SuperBattle() {
     authenticateUser();
   }, []);
 
-  // Mock data - in production, this would come from an API
-  const battle: Battle = {
-    creator: "creator",
-    question: "Is buying NFTs in 2025 still worth it?",
-    votingEndsIn: "5h 32m",
-    sideA: {
-      emoji: "🔥",
-      label: "Side A",
-      percentage: 60,
-    },
-    sideB: {
-      emoji: "🧠",
-      label: "Side B",
-      percentage: 40,
-    },
-  };
+  // Load battle data and subscribe to real-time updates
+  useEffect(() => {
+    const loadBattle = async () => {
+      try {
+        const response = await fetch("/api/battles");
+        const data = await response.json();
+        
+        if (data && data.id) {
+          setBattle(formatBattle(data));
+          setLoading(false);
+          
+          // Subscribe to real-time battle updates
+          const unsubscribeBattle = subscribeToBattle(data.id, (updatedBattle) => {
+            setBattle(formatBattle(updatedBattle));
+          });
+          
+          // Subscribe to real-time opinions
+          const unsubscribeOpinions = subscribeToOpinions(data.id, (updatedOpinions) => {
+            setOpinions(updatedOpinions.slice(0, 10).map(formatOpinion));
+          });
+          
+          // Check if user has already voted
+          if (user && isAuthenticated) {
+            const voteResponse = await fetch(`/api/votes?battleId=${data.id}&fid=${user.fid}`);
+            const voteData = await voteResponse.json();
+            if (voteData.success && voteData.vote) {
+              setHasVoted(true);
+              setSelectedSide(voteData.vote.side);
+            }
+          }
+          
+          return () => {
+            unsubscribeBattle();
+            unsubscribeOpinions();
+          };
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Failed to load battle:", error);
+        setLoading(false);
+      }
+    };
 
-  const topOpinions: Opinion[] = [
-    {
-      username: "user123",
-      opinion: "NFTs are evolving beyond just art. Utility tokens, gaming assets, and digital identity will make them crucial for web3 in 2025.",
-      tags: ["Smart", "Relatable"],
-      weight: "3.2 ETH weight",
-      avatarColor: "#dddddd",
-    },
-    {
-      username: "crypto_skeptic",
-      opinion: "The hype has died down. Unless there's a killer app, most NFTs will be worthless. Focus on real-world assets instead.",
-      tags: ["Risky", "YOLO"],
-      weight: "1.8 ETH weight",
-      avatarColor: "#dddddd",
-    },
-    {
-      username: "digital_artist",
-      opinion: "For artists, NFTs provide direct ownership and royalty streams. That value proposition isn't going anywhere.",
-      tags: ["Smart"],
-      weight: "0.9 ETH weight",
-      avatarColor: "#dddddd",
-    },
-  ];
+    loadBattle();
+  }, [user, isAuthenticated]);
 
-  const handleSubmitOpinion = () => {
-    if (opinion.trim() && selectedSide) {
-      // TODO: Submit opinion to API
-      console.log("Submitting opinion:", { opinion, side: selectedSide });
-      setOpinion("");
+  const handleSubmitOpinion = async () => {
+    if (!opinion.trim() || !selectedSide || !battle || !isAuthenticated || !user) {
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/opinions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.fid}`,
+        },
+        body: JSON.stringify({
+          battleId: battle.id,
+          opinion: opinion.trim(),
+          side: selectedSide,
+          username: user.username || user.displayName || `user${user.fid}`,
+        }),
+      });
+
+      if (response.ok) {
+        setOpinion("");
+        // Opinions will be updated via real-time subscription
+      } else {
+        const error = await response.json();
+        alert(`Failed to submit opinion: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Error submitting opinion:", error);
+      alert("Failed to submit opinion");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const handleVote = (side: "A" | "B") => {
-    setSelectedSide(side);
+  const handleVote = async (side: "A" | "B") => {
+    if (!battle || !isAuthenticated || !user || hasVoted) {
+      if (hasVoted) {
+        alert("You have already voted on this battle");
+      }
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/votes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.fid}`,
+        },
+        body: JSON.stringify({
+          battleId: battle.id,
+          side,
+        }),
+      });
+
+      if (response.ok) {
+        setSelectedSide(side);
+        setHasVoted(true);
+        // Battle votes will be updated via real-time subscription
+      } else {
+        const error = await response.json();
+        alert(`Failed to vote: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Error voting:", error);
+      alert("Failed to vote");
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-foreground">Loading battle...</div>
+      </div>
+    );
+  }
+
+  if (!battle) {
+    return (
+      <div className="bg-background min-h-screen flex items-center justify-center">
+        <div className="text-foreground">No active battle found</div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-background min-h-screen">
@@ -119,7 +257,7 @@ export default function SuperBattle() {
           </p>
           {isAuthenticated && user && (
             <p className="text-xs text-center text-muted-foreground mt-2">
-              Connected as {user.username || `FID: ${user.fid}`}
+              Connected as {user.username || user.displayName || `FID: ${user.fid}`}
             </p>
           )}
         </div>
@@ -151,7 +289,8 @@ export default function SuperBattle() {
         <div className="flex gap-0 mb-6">
           <button
             onClick={() => handleVote("A")}
-            className={`flex-1 rounded-l-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all ${
+            disabled={hasVoted || !isAuthenticated}
+            className={`flex-1 rounded-l-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               selectedSide === "A"
                 ? "bg-black border-black text-white"
                 : "bg-card border-border text-foreground hover:bg-muted"
@@ -166,7 +305,8 @@ export default function SuperBattle() {
 
           <button
             onClick={() => handleVote("B")}
-            className={`flex-1 rounded-r-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all ${
+            disabled={hasVoted || !isAuthenticated}
+            className={`flex-1 rounded-r-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               selectedSide === "B"
                 ? "bg-black border-black text-white"
                 : "bg-card border-border text-foreground hover:bg-muted"
@@ -180,6 +320,14 @@ export default function SuperBattle() {
           </button>
         </div>
 
+        {!isAuthenticated && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-center">
+            <p className="text-sm text-yellow-800">
+              Connect with Farcaster to vote and share opinions
+            </p>
+          </div>
+        )}
+
         {/* Opinion Input */}
         <div className="flex flex-col gap-2.5 mb-8">
           <textarea
@@ -188,16 +336,22 @@ export default function SuperBattle() {
             placeholder="Write your opinion (max 280 chars)"
             className="bg-card border border-border rounded-lg p-3.5 min-h-[80px] font-normal text-[14.4px] text-foreground placeholder:text-[#999999] resize-none focus:outline-none focus:ring-2 focus:ring-ring"
             maxLength={280}
+            disabled={!isAuthenticated}
           />
-          <button
-            onClick={handleSubmitOpinion}
-            disabled={!opinion.trim() || !selectedSide}
-            className="bg-black rounded-lg py-3 text-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="font-bold text-[15.8px] text-white">
-              Submit Opinion
+          <div className="flex justify-between items-center">
+            <span className="text-xs text-muted-foreground">
+              {opinion.length}/280
             </span>
-          </button>
+            <button
+              onClick={handleSubmitOpinion}
+              disabled={!opinion.trim() || !selectedSide || !isAuthenticated || submitting}
+              className="bg-black rounded-lg py-3 px-6 text-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="font-bold text-[15.8px] text-white">
+                {submitting ? "Submitting..." : "Submit Opinion"}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Top Opinions Section */}
@@ -208,20 +362,33 @@ export default function SuperBattle() {
             </h2>
           </div>
 
-          {topOpinions.map((op, i) => (
-            <OpinionCard key={i} {...op} />
-          ))}
+          {opinions.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No opinions yet. Be the first to share yours!
+            </div>
+          ) : (
+            opinions.map((op) => (
+              <OpinionCard
+                key={op.id}
+                username={op.username}
+                opinion={op.opinion}
+                tags={op.tags || []}
+                weight={op.weight}
+                avatarColor={op.avatarColor}
+              />
+            ))
+          )}
         </div>
 
         {/* Results Section (conditionally shown) */}
         {showResults && (
           <DuelResults
-            winnerSide="Side A"
-            topOpinions={[
-              { rank: 1, username: "user123", snippet: "NFTs evolving beyond art." },
-              { rank: 2, username: "digital_artist", snippet: "Value for artists." },
-              { rank: 3, username: "investorX", snippet: "New ecosystems emerge." },
-            ]}
+            winnerSide={battle.sideA.votes > battle.sideB.votes ? battle.sideA.label : battle.sideB.label}
+            topOpinions={opinions.slice(0, 3).map((op, i) => ({
+              rank: i + 1,
+              username: op.username,
+              snippet: op.opinion.slice(0, 50) + (op.opinion.length > 50 ? "..." : ""),
+            }))}
             onMintNFT={() => console.log("Mint NFT")}
             onStartNewDuel={() => console.log("Start new duel")}
             onViewPastDebates={() => console.log("View past debates")}

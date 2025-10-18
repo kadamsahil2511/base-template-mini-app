@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAuth } from "~/lib/auth";
+import { submitVote, getUserVote } from "~/lib/database";
 
 export const dynamic = "force-dynamic";
-
-// Mock votes storage - in production, use a database
-const votes = new Map<string, { fid: number; side: "A" | "B" }>();
 
 export async function POST(req: NextRequest) {
   try {
@@ -27,17 +25,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Store vote (one vote per user per battle)
-    const voteKey = `${battleId}-${fid}`;
-    votes.set(voteKey, { fid, side });
+    // Submit vote to Firebase
+    await submitVote({
+      battleId,
+      side,
+      fid,
+      timestamp: new Date().toISOString(),
+    });
 
-    // In production, update vote counts in database
     return NextResponse.json({
       success: true,
       vote: { battleId, side, fid },
     });
   } catch (error) {
     console.error("Error recording vote:", error);
+    
+    if (error instanceof Error && error.message.includes("already voted")) {
+      return NextResponse.json(
+        { success: false, error: "You have already voted on this battle" },
+        { status: 409 }
+      );
+    }
+    
     return NextResponse.json(
       { success: false, error: "Failed to record vote" },
       { status: 500 }
@@ -58,12 +67,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const voteKey = `${battleId}-${fidParam}`;
-    const vote = votes.get(voteKey);
+    const fid = parseInt(fidParam);
+    const userVote = await getUserVote(battleId, fid);
 
     return NextResponse.json({
       success: true,
-      vote: vote || null,
+      vote: userVote ? { side: userVote } : null,
     });
   } catch (error) {
     console.error("Error fetching vote:", error);

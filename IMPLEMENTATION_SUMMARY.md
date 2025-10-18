@@ -3,11 +3,42 @@
 ## What Was Built
 
 A fully functional Farcaster Mini App based on your Figma design (node-id=2-5) that enables users to:
-- Vote on daily opinion battles
-- Share their opinions (max 280 characters)
-- View real-time voting results
-- See top community opinions
+- Vote on daily opinion battles with **real-time updates**
+- Share their opinions (max 280 characters) with **persistent storage**
+- View live voting results that update instantly
+- See top community opinions in real-time
 - Engage with the Farcaster social ecosystem
+
+## ✅ Firebase Realtime Database Integration (NEW!)
+
+### Database Features
+- **Real-time Updates**: All votes and opinions sync instantly across clients
+- **Persistent Storage**: Data stored permanently in Firebase RTDB
+- **One Vote Per User**: Enforced at database level to prevent duplicates
+- **Live Percentages**: Vote counts update automatically for all users
+- **Opinion Feed**: New opinions appear in real-time across all devices
+
+### Database Structure
+```
+firebase-rtdb/
+├── battles/{battleId}       → Battle data (question, sides, votes)
+├── votes/{battleId}/{fid}   → User votes (one per user per battle)
+└── opinions/{battleId}/{id} → User opinions with metadata
+```
+
+### Initial Battle Created
+```
+Battle ID: -Obqzj9LbMJY2yFp0kY-
+Question: "Is buying NFTs in 2025 still worth it?"
+Sides: 🔥 Yes, Worth It  vs  🧠 Not Worth It
+Status: Active (24 hour duration)
+```
+
+### Commands
+```bash
+npm run seed-battle  # Create new battle in Firebase
+npm run dev          # Run with Firebase integration
+```
 
 ## Key Features Implemented
 
@@ -17,37 +48,49 @@ A fully functional Farcaster Mini App based on your Figma design (node-id=2-5) t
 - Displays user info (FID/username) when connected
 - Falls back gracefully for non-Farcaster environments
 
-### 2. Manifest Configuration ✅
+### 2. Firebase Backend ✅ (NEW!)
+- **Database URL**: https://mini-superuserz-default-rtdb.firebaseio.com/
+- **Real-time Listeners**: Live updates for battles and opinions
+- **API Integration**: All endpoints connected to Firebase RTDB
+- **Data Persistence**: Votes and opinions stored permanently
+- **Seed Script**: Automated battle creation tool
+
+### 3. Manifest Configuration ✅
 - Created `.well-known/farcaster.json` with proper structure
-- Includes placeholder for account association (needs signing)
+- **Signed with FID**: 1391325 (accountAssociation included)
 - Configured app metadata for Farcaster discovery
 - Set up webhook URL for notifications
 
-### 3. Social Sharing ✅
+### 4. Social Sharing ✅
 - Added `fc:miniapp` meta tags for rich cards in feeds
 - Configured splash screen with custom branding
 - Set up proper OpenGraph metadata
 - Ensured 3:2 aspect ratio images for embeds
 
-### 4. Component Structure
+### 5. Component Structure
 ```
 src/
 ├── app/
 │   ├── app.tsx              # Main entry with SDK initialization
 │   ├── layout.tsx           # Meta tags and providers
 │   └── api/
-│       ├── battles/         # Battle management endpoints
-│       ├── votes/           # Voting system
-│       ├── opinions/        # Opinion submissions
+│       ├── battles/         # Battle management (Firebase)
+│       ├── votes/           # Voting system (Firebase)
+│       ├── opinions/        # Opinion submissions (Firebase)
 │       └── webhook/         # Farcaster webhook handler
 ├── components/
-│   ├── SuperBattle.tsx      # Main battle component
+│   ├── SuperBattle.tsx      # Main battle component (real-time)
 │   └── ui/
 │       ├── OpinionCard.tsx  # Individual opinion display
 │       ├── DuelResults.tsx  # Battle results view
 │       └── ...
-└── lib/
-    ├── auth.ts              # Authentication utilities
+├── lib/
+│   ├── auth.ts              # Authentication utilities
+│   ├── firebase.ts          # Firebase initialization (NEW!)
+│   └── database.ts          # Database helper functions (NEW!)
+└── scripts/
+    └── seed-battle.ts       # Battle creation script (NEW!)
+```
     ├── constants.ts         # App configuration
     └── ...
 ```
