@@ -93,13 +93,18 @@ export default function SuperBattle() {
   const [showResults, setShowResults] = useState(false);
   const [user, setUser] = useState<{ fid: number; username?: string; displayName?: string } | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [battle, setBattle] = useState<Battle | null>(null);
-  const [opinions, setOpinions] = useState<Opinion[]>([]);
+  const [battles, setBattles] = useState<Battle[]>([]);
+  const [activeBattleId, setActiveBattleId] = useState<string | null>(null);
+  const [opinionsMap, setOpinionsMap] = useState<Record<string, Opinion[]>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false);
+  const [hasVotedMap, setHasVotedMap] = useState<Record<string, boolean>>({});
+  const [userVotesMap, setUserVotesMap] = useState<Record<string, "A" | "B">>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creatingBattle, setCreatingBattle] = useState(false);
+
+  // Get the active battle (for opinion submission)
+  const activeBattle = battles.find(b => b.id === activeBattleId) || battles[0] || null;
 
   useEffect(() => {
     const authenticateUser = async () => {
@@ -118,55 +123,70 @@ export default function SuperBattle() {
     authenticateUser();
   }, []);
 
-  // Load battle data and subscribe to real-time updates
+  // Load all battles and subscribe to real-time updates
   useEffect(() => {
-    const loadBattle = async () => {
+    const loadBattles = async () => {
       try {
-        const response = await fetch("/api/battles");
+        const response = await fetch("/api/battles?all=true");
         const data = await response.json();
         
-        if (data && data.id) {
-          setBattle(formatBattle(data));
+        if (data && Array.isArray(data) && data.length > 0) {
+          const formattedBattles = data.map(formatBattle);
+          setBattles(formattedBattles);
+          setActiveBattleId(formattedBattles[0].id);
           setLoading(false);
           
-          // Subscribe to real-time battle updates
-          const unsubscribeBattle = subscribeToBattle(data.id, (updatedBattle) => {
-            setBattle(formatBattle(updatedBattle));
-          });
+          // Subscribe to real-time updates for each battle
+          const unsubscribers: Array<() => void> = [];
           
-          // Subscribe to real-time opinions
-          const unsubscribeOpinions = subscribeToOpinions(data.id, (updatedOpinions) => {
-            setOpinions(updatedOpinions.slice(0, 10).map(formatOpinion));
-          });
-          
-          // Check if user has already voted
-          if (user && isAuthenticated) {
-            const voteResponse = await fetch(`/api/votes?battleId=${data.id}&fid=${user.fid}`);
-            const voteData = await voteResponse.json();
-            if (voteData.success && voteData.vote) {
-              setHasVoted(true);
-              setSelectedSide(voteData.vote.side);
+          data.forEach((battleData) => {
+            // Subscribe to battle updates
+            const unsubscribeBattle = subscribeToBattle(battleData.id, (updatedBattle) => {
+              setBattles(prev => prev.map(b => 
+                b.id === battleData.id ? formatBattle(updatedBattle) : b
+              ));
+            });
+            unsubscribers.push(unsubscribeBattle);
+            
+            // Subscribe to opinions for this battle
+            const unsubscribeOpinions = subscribeToOpinions(battleData.id, (updatedOpinions) => {
+              setOpinionsMap(prev => ({
+                ...prev,
+                [battleData.id]: updatedOpinions.slice(0, 10).map(formatOpinion)
+              }));
+            });
+            unsubscribers.push(unsubscribeOpinions);
+            
+            // Check if user has voted on this battle
+            if (user && isAuthenticated) {
+              fetch(`/api/votes?battleId=${battleData.id}&fid=${user.fid}`)
+                .then(res => res.json())
+                .then(voteData => {
+                  if (voteData.success && voteData.vote) {
+                    setHasVotedMap(prev => ({ ...prev, [battleData.id]: true }));
+                    setUserVotesMap(prev => ({ ...prev, [battleData.id]: voteData.vote.side }));
+                  }
+                });
             }
-          }
+          });
           
           return () => {
-            unsubscribeBattle();
-            unsubscribeOpinions();
+            unsubscribers.forEach(unsub => unsub());
           };
         } else {
           setLoading(false);
         }
       } catch (error) {
-        console.error("Failed to load battle:", error);
+        console.error("Failed to load battles:", error);
         setLoading(false);
       }
     };
 
-    loadBattle();
+    loadBattles();
   }, [user, isAuthenticated]);
 
   const handleSubmitOpinion = async () => {
-    if (!opinion.trim() || !selectedSide || !battle || !isAuthenticated || !user) {
+    if (!opinion.trim() || !selectedSide || !activeBattle || !isAuthenticated || !user) {
       return;
     }
 
@@ -179,7 +199,7 @@ export default function SuperBattle() {
           "Authorization": `Bearer ${user.fid}`,
         },
         body: JSON.stringify({
-          battleId: battle.id,
+          battleId: activeBattle.id,
           opinion: opinion.trim(),
           side: selectedSide,
           username: user.username || user.displayName || `user${user.fid}`,
@@ -201,7 +221,10 @@ export default function SuperBattle() {
     }
   };
 
-  const handleVote = async (side: "A" | "B") => {
+  const handleVote = async (side: "A" | "B", battleId: string) => {
+    const battle = battles.find(b => b.id === battleId);
+    const hasVoted = hasVotedMap[battleId];
+    
     if (!battle || !isAuthenticated || !user || hasVoted) {
       if (hasVoted) {
         alert("You have already voted on this battle");
@@ -223,8 +246,11 @@ export default function SuperBattle() {
       });
 
       if (response.ok) {
-        setSelectedSide(side);
-        setHasVoted(true);
+        if (battleId === activeBattleId) {
+          setSelectedSide(side);
+        }
+        setHasVotedMap(prev => ({ ...prev, [battleId]: true }));
+        setUserVotesMap(prev => ({ ...prev, [battleId]: side }));
         // Battle votes will be updated via real-time subscription
       } else {
         const error = await response.json();
@@ -284,15 +310,15 @@ export default function SuperBattle() {
   if (loading) {
     return (
       <div className="bg-background min-h-screen flex items-center justify-center">
-        <div className="text-foreground">Loading battle...</div>
+        <div className="text-foreground">Loading battles...</div>
       </div>
     );
   }
 
-  if (!battle) {
+  if (battles.length === 0) {
     return (
       <div className="bg-background min-h-screen flex items-center justify-center">
-        <div className="text-foreground">No active battle found</div>
+        <div className="text-foreground">No active battles found</div>
       </div>
     );
   }
@@ -335,76 +361,117 @@ export default function SuperBattle() {
           )}
         </div>
 
-        {/* Battle Card */}
-        <div className="bg-card border border-border rounded-xl p-4 mb-6">
-          {/* Creator */}
-          <div className="flex gap-2 items-center mb-4">
-            <Image 
-              src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${battle.creatorFid}`)}`}
-              alt={`@${battle.creator}`}
-              width={32}
-              height={32}
-              className="w-8 h-8 rounded-full border border-border object-cover"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                if (e.currentTarget.nextElementSibling) {
-                  (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'block';
-                }
-              }}
-            />
-            <div className="w-8 h-8 rounded-full bg-[#cccccc] border border-border" style={{ display: 'none' }} />
-            <span className="font-bold text-[14.4px] text-[#555555]">
-              @{battle.creator}
-            </span>
-          </div>
+        {/* Battle Cards - Loop through all battles */}
+        {battles.map((battle) => {
+          const battleOpinions = opinionsMap[battle.id] || [];
+          const hasVoted = hasVotedMap[battle.id] || false;
+          const userVote = userVotesMap[battle.id];
+          
+          return (
+            <div key={battle.id} className="mb-8">
+              {/* Battle Card */}
+              <div className="bg-card border border-border rounded-xl p-4 mb-6">
+                {/* Creator */}
+                <div className="flex gap-2 items-center mb-4">
+                  <Image 
+                    src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${battle.creatorFid}`)}`}
+                    alt={`@${battle.creator}`}
+                    width={32}
+                    height={32}
+                    className="w-8 h-8 rounded-full border border-border object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      if (e.currentTarget.nextElementSibling) {
+                        (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'block';
+                      }
+                    }}
+                  />
+                  <div className="w-8 h-8 rounded-full bg-[#cccccc] border border-border" style={{ display: 'none' }} />
+                  <span className="font-bold text-[14.4px] text-[#555555]">
+                    @{battle.creator}
+                  </span>
+                </div>
 
-          {/* Question */}
-          <h2 className="font-bold text-[19.2px] leading-[26.88px] text-[#1a1a1a] mb-4">
-            {battle.question}
-          </h2>
+                {/* Question */}
+                <h2 className="font-bold text-[19.2px] leading-[26.88px] text-[#1a1a1a] mb-4">
+                  {battle.question}
+                </h2>
 
-          {/* Timer */}
-          <div className="text-right">
-            <span className="font-bold text-[13.6px] text-foreground">
-              Voting ends in {battle.votingEndsIn}
-            </span>
-          </div>
-        </div>
+                {/* Timer */}
+                <div className="text-right">
+                  <span className="font-bold text-[13.6px] text-foreground">
+                    Voting ends in {battle.votingEndsIn}
+                  </span>
+                </div>
+              </div>
 
-        {/* Voting Buttons */}
-        <div className="flex gap-0 mb-6">
-          <button
-            onClick={() => handleVote("A")}
-            disabled={hasVoted || !isAuthenticated}
-            className={`flex-1 rounded-l-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-              selectedSide === "A"
-                ? "bg-black border-black text-white"
-                : "bg-card border-border text-foreground hover:bg-muted"
-            }`}
-          >
-            <div className="text-[19.2px]">{battle.sideA.emoji}</div>
-            <div className="font-bold text-base">{battle.sideA.label}</div>
-            <div className="font-normal text-[12.8px] pt-[3px]">
-              {battle.sideA.percentage}%
+              {/* Voting Buttons */}
+              <div className="flex gap-0 mb-6">
+                <button
+                  onClick={() => handleVote("A", battle.id)}
+                  disabled={hasVoted || !isAuthenticated}
+                  className={`flex-1 rounded-l-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    userVote === "A"
+                      ? "bg-black border-black text-white"
+                      : "bg-card border-border text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <div className="text-[19.2px]">{battle.sideA.emoji}</div>
+                  <div className="font-bold text-base">{battle.sideA.label}</div>
+                  <div className="font-normal text-[12.8px] pt-[3px]">
+                    {battle.sideA.percentage}%
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleVote("B", battle.id)}
+                  disabled={hasVoted || !isAuthenticated}
+                  className={`flex-1 rounded-r-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    userVote === "B"
+                      ? "bg-black border-black text-white"
+                      : "bg-card border-border text-foreground hover:bg-muted"
+                  }`}
+                >
+                  <div className="text-[19.2px]">{battle.sideB.emoji}</div>
+                  <div className="font-bold text-base">{battle.sideB.label}</div>
+                  <div className="font-normal text-[12.8px] pt-[3px]">
+                    {battle.sideB.percentage}%
+                  </div>
+                </button>
+              </div>
+
+              {/* Top Opinions for this battle */}
+              <div className="flex flex-col gap-2.5 mb-6">
+                <div className="border-b border-border pb-1.5">
+                  <h3 className="font-bold text-[16px] text-[#1a1a1a]">
+                    Top Opinions
+                  </h3>
+                </div>
+
+                {battleOpinions.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    No opinions yet. Be the first to share yours!
+                  </div>
+                ) : (
+                  battleOpinions.map((op: Opinion) => (
+                    <OpinionCard
+                      key={op.id}
+                      username={op.username}
+                      opinion={op.opinion}
+                      tags={op.tags || []}
+                      weight={op.weight}
+                      avatarColor={op.avatarColor}
+                      fid={op.fid}
+                    />
+                  ))
+                )}
+              </div>
+
+              {/* Divider between battles */}
+              <div className="border-t-2 border-border mt-8" />
             </div>
-          </button>
-
-          <button
-            onClick={() => handleVote("B")}
-            disabled={hasVoted || !isAuthenticated}
-            className={`flex-1 rounded-r-xl px-3 py-3.5 flex flex-col gap-1.5 items-center border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-              selectedSide === "B"
-                ? "bg-black border-black text-white"
-                : "bg-card border-border text-foreground hover:bg-muted"
-            }`}
-          >
-            <div className="text-[19.2px]">{battle.sideB.emoji}</div>
-            <div className="font-bold text-base">{battle.sideB.label}</div>
-            <div className="font-normal text-[12.8px] pt-[3px]">
-              {battle.sideB.percentage}%
-            </div>
-          </button>
-        </div>
+          );
+        })}
 
         {!isAuthenticated && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-center">
@@ -414,64 +481,44 @@ export default function SuperBattle() {
           </div>
         )}
 
-        {/* Opinion Input */}
-        <div className="flex flex-col gap-2.5 mb-8">
-          <textarea
-            value={opinion}
-            onChange={(e) => setOpinion(e.target.value.slice(0, 280))}
-            placeholder="Write your opinion (max 280 chars)"
-            className="bg-card border border-border rounded-lg p-3.5 min-h-[80px] font-normal text-[14.4px] text-foreground placeholder:text-[#999999] resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-            maxLength={280}
-            disabled={!isAuthenticated}
-          />
-          <div className="flex justify-between items-center">
-            <span className="text-xs text-muted-foreground">
-              {opinion.length}/280
-            </span>
-            <button
-              onClick={handleSubmitOpinion}
-              disabled={!opinion.trim() || !selectedSide || !isAuthenticated || submitting}
-              className="bg-black rounded-lg py-3 px-6 text-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="font-bold text-[15.8px] text-white">
-                {submitting ? "Submitting..." : "Submit Opinion"}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Top Opinions Section */}
-        <div className="flex flex-col gap-2.5 mb-10">
-          <div className="border-b border-border pb-1.5">
-            <h2 className="font-bold text-[19.2px] text-[#1a1a1a]">
-              Top Opinions
-            </h2>
-          </div>
-
-          {opinions.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No opinions yet. Be the first to share yours!
+        {/* Opinion Input - for the first/active battle */}
+        {activeBattle && (
+          <div className="flex flex-col gap-2.5 mb-8">
+            <div className="border-b border-border pb-2 mb-2">
+              <h3 className="font-semibold text-base text-foreground">
+                Share your opinion on: {activeBattle.question}
+              </h3>
             </div>
-          ) : (
-            opinions.map((op) => (
-              <OpinionCard
-                key={op.id}
-                username={op.username}
-                opinion={op.opinion}
-                tags={op.tags || []}
-                weight={op.weight}
-                avatarColor={op.avatarColor}
-                fid={op.fid}
-              />
-            ))
-          )}
-        </div>
+            <textarea
+              value={opinion}
+              onChange={(e) => setOpinion(e.target.value.slice(0, 280))}
+              placeholder="Write your opinion (max 280 chars)"
+              className="bg-card border border-border rounded-lg p-3.5 min-h-[80px] font-normal text-[14.4px] text-foreground placeholder:text-[#999999] resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+              maxLength={280}
+              disabled={!isAuthenticated}
+            />
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-muted-foreground">
+                {opinion.length}/280
+              </span>
+              <button
+                onClick={handleSubmitOpinion}
+                disabled={!opinion.trim() || !selectedSide || !isAuthenticated || submitting}
+                className="bg-black rounded-lg py-3 px-6 text-center hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="font-bold text-[15.8px] text-white">
+                  {submitting ? "Submitting..." : "Submit Opinion"}
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Results Section (conditionally shown) */}
-        {showResults && (
+        {showResults && activeBattle && (
           <DuelResults
-            winnerSide={battle.sideA.votes > battle.sideB.votes ? battle.sideA.label : battle.sideB.label}
-            topOpinions={opinions.slice(0, 3).map((op, i) => ({
+            winnerSide={activeBattle.sideA.votes > activeBattle.sideB.votes ? activeBattle.sideA.label : activeBattle.sideB.label}
+            topOpinions={(opinionsMap[activeBattle.id] || []).slice(0, 3).map((op, i) => ({
               rank: i + 1,
               username: op.username,
               snippet: op.opinion.slice(0, 50) + (op.opinion.length > 50 ? "..." : ""),

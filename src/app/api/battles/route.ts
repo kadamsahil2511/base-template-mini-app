@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const battleId = searchParams.get("battleId");
+    const all = searchParams.get("all");
     
     if (battleId) {
       const battle = await getBattle(battleId);
@@ -18,6 +19,12 @@ export async function GET(req: NextRequest) {
         );
       }
       return NextResponse.json(battle);
+    }
+    
+    // Return all active battles if requested
+    if (all === "true") {
+      const battles = await getActiveBattles();
+      return NextResponse.json(battles);
     }
     
     // Return the first active battle
