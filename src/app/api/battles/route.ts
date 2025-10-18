@@ -23,7 +23,7 @@ const mockBattle = {
   status: "active", // active, ended
 };
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     // Return the mock battle for now
     return NextResponse.json(mockBattle);

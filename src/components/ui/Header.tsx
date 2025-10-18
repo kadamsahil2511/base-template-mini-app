@@ -33,6 +33,7 @@ export function Header({ neynarUser }: HeaderProps) {
               }}
             >
               {context.user.pfpUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={context.user.pfpUrl}
                   alt="Profile"
