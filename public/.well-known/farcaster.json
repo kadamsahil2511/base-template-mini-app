@@ -1,0 +1,19 @@
+{
+  "accountAssociation": {
+    "header": "PLACEHOLDER_HEADER",
+    "payload": "PLACEHOLDER_PAYLOAD",
+    "signature": "PLACEHOLDER_SIGNATURE"
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "Super Battle",
+    "iconUrl": "https://your-domain.com/logo.png",
+    "homeUrl": "https://your-domain.com",
+    "imageUrl": "https://your-domain.com/og-image.png",
+    "buttonTitle": "Start Battle",
+    "splashImageUrl": "https://your-domain.com/logo.png",
+    "splashBackgroundColor": "#0f172a",
+    "description": "Choose your side in daily opinion battles. Vote, share, and see what others think!",
+    "webhookUrl": "https://your-domain.com/api/webhook"
+  }
+}
