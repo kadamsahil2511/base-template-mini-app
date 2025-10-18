@@ -9,6 +9,7 @@ import { subscribeToBattle, subscribeToOpinions, type Battle as DBBattle, type O
 interface Battle {
   id: string;
   creator: string;
+  creatorFid: number;
   question: string;
   votingEndsIn: string;
   votingEndsAt: string;
@@ -33,6 +34,7 @@ interface Opinion {
   tags?: string[];
   weight: string;
   avatarColor?: string;
+  fid: number;
 }
 
 function calculateTimeRemaining(votingEndsAt: string): string {
@@ -56,6 +58,7 @@ function formatBattle(dbBattle: DBBattle): Battle {
   return {
     id: dbBattle.id,
     creator: dbBattle.creator,
+    creatorFid: dbBattle.creatorFid,
     question: dbBattle.question,
     votingEndsIn: calculateTimeRemaining(dbBattle.votingEndsAt),
     votingEndsAt: dbBattle.votingEndsAt,
@@ -78,6 +81,7 @@ function formatOpinion(dbOpinion: DBOpinion): Opinion {
     tags: [],
     weight: `${dbOpinion.weight.toFixed(1)} ETH weight`,
     avatarColor: "#dddddd",
+    fid: dbOpinion.fid,
   };
 }
 
@@ -256,9 +260,19 @@ export default function SuperBattle() {
             Pick a side. Cast your take. Vote with weight.
           </p>
           {isAuthenticated && user && (
-            <p className="text-xs text-center text-muted-foreground mt-2">
-              Connected as {user.username || user.displayName || `FID: ${user.fid}`}
-            </p>
+            <div className="flex items-center justify-center gap-2 mt-2">
+              <img 
+                src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${user.fid}`)}`}
+                alt={`@${user.username || user.displayName}`}
+                className="w-6 h-6 rounded-full border border-border object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+              <p className="text-xs text-center text-muted-foreground">
+                Connected as @{user.username || user.displayName || `FID: ${user.fid}`}
+              </p>
+            </div>
           )}
         </div>
 
@@ -266,7 +280,18 @@ export default function SuperBattle() {
         <div className="bg-card border border-border rounded-xl p-4 mb-6">
           {/* Creator */}
           <div className="flex gap-2 items-center mb-4">
-            <div className="w-8 h-8 rounded-full bg-[#cccccc] border border-border" />
+            <img 
+              src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${battle.creatorFid}`)}`}
+              alt={`@${battle.creator}`}
+              className="w-8 h-8 rounded-full border border-border object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                if (e.currentTarget.nextElementSibling) {
+                  (e.currentTarget.nextElementSibling as HTMLElement).style.display = 'block';
+                }
+              }}
+            />
+            <div className="w-8 h-8 rounded-full bg-[#cccccc] border border-border" style={{ display: 'none' }} />
             <span className="font-bold text-[14.4px] text-[#555555]">
               @{battle.creator}
             </span>
@@ -375,6 +400,7 @@ export default function SuperBattle() {
                 tags={op.tags || []}
                 weight={op.weight}
                 avatarColor={op.avatarColor}
+                fid={op.fid}
               />
             ))
           )}
