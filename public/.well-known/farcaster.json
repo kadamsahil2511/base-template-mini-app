@@ -1,9 +1,9 @@
 {
   "accountAssociation": {
-    "header": "PLACEHOLDER_HEADER",
-    "payload": "PLACEHOLDER_PAYLOAD",
-    "signature": "PLACEHOLDER_SIGNATURE"
-  },
+    "header": "eyJmaWQiOjEzOTEzMjUsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHhkMzk5RUQwRWZDNDIxMzJlMkYyMGYzZkEwNDY1NWQyM2Y4ZjI0NTJkIn0",
+    "payload": "eyJkb21haW4iOiJtaW5pLnN1cGVydXNlcnouY29tIn0",
+    "signature": "MHhkNzRmNTViMjRkYjVkZDc1MmZkYjI1NDA0NDBlYmUzYzllM2U0NGNlMzU1NjJlYjJlZTkxYWYzOWM0NWU0OTdiMjRiNDBiNzk1YTM5NmZhYmRkYTRhOGY1MGY1YzQ3N2FlZDc2MDQwM2QwYTE5ZGFmOWY5MzRkZTU2NTc0Y2I5OTFj"
+  }
   "miniapp": {
     "version": "1",
     "name": "Super Battle",
@@ -17,3 +17,4 @@
     "webhookUrl": "https://mini.superuserz.com/api/webhook"
   }
 }
+
