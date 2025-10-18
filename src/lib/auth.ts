@@ -7,9 +7,19 @@ export async function verifyAuth(request: Request): Promise<number | null> {
     const auth = request.headers.get('authorization');
     if (!auth?.startsWith('Bearer ')) return null;
 
+    const token = auth.split(' ')[1];
+    
+    // Check if it's just a FID (simple numeric value)
+    const fidMatch = token.match(/^\d+$/);
+    if (fidMatch) {
+        // Simple FID-based auth (for development/testing)
+        return Number(token);
+    }
+
+    // Otherwise try to verify as JWT token
     try {
         const payload = await quickAuth.verifyJwt({
-            token: auth.split(' ')[1],
+            token,
             domain: (new URL(process.env.NEXT_PUBLIC_URL!)).hostname
         });
 
