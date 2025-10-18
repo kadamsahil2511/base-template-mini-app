@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 interface OpinionCardProps {
   username: string;
   opinion: string;
@@ -25,9 +27,11 @@ export function OpinionCard({
       {/* User info */}
       <div className="flex gap-2 items-center">
         {avatarUrl ? (
-          <img 
+          <Image 
             src={avatarUrl}
             alt={`@${username}`}
+            width={37}
+            height={37}
             className="w-[37px] h-[37px] rounded-[18.5px] border border-border object-cover"
             onError={(e) => {
               // Fallback to colored circle if image fails

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { OpinionCard } from "~/components/ui/OpinionCard";
 import { DuelResults } from "~/components/ui/DuelResults";
@@ -263,7 +264,7 @@ export default function SuperBattle() {
       });
 
       if (response.ok) {
-        const data = await response.json();
+        await response.json();
         setShowCreateModal(false);
         alert("Battle created successfully! Reloading...");
         // Reload the page to show the new battle
@@ -310,9 +311,11 @@ export default function SuperBattle() {
           {isAuthenticated && user && (
             <div className="flex flex-col items-center gap-2 mt-2">
               <div className="flex items-center gap-2">
-                <img 
+                <Image 
                   src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${user.fid}`)}`}
                   alt={`@${user.username || user.displayName}`}
+                  width={24}
+                  height={24}
                   className="w-6 h-6 rounded-full border border-border object-cover"
                   onError={(e) => {
                     e.currentTarget.style.display = 'none';
@@ -336,9 +339,11 @@ export default function SuperBattle() {
         <div className="bg-card border border-border rounded-xl p-4 mb-6">
           {/* Creator */}
           <div className="flex gap-2 items-center mb-4">
-            <img 
+            <Image 
               src={`https://res.cloudinary.com/merkle-manufactory/image/fetch/c_fill,f_png,w_256/${encodeURIComponent(`https://warpcast.com/avatar/${battle.creatorFid}`)}`}
               alt={`@${battle.creator}`}
+              width={32}
+              height={32}
               className="w-8 h-8 rounded-full border border-border object-cover"
               onError={(e) => {
                 e.currentTarget.style.display = 'none';
